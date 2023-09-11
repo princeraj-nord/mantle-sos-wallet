@@ -301,6 +301,9 @@ export interface ICrossChainMessenger {
    */
   getMessageStateRoot(message: MessageLike): Promise<StateRoot | null>
 
+
+  getMessageStateRootForSosWallet(message: MessageLike): Promise<StateRoot | null>
+
   /**
    * Returns the StateBatchAppended event that was emitted when the batch with a given index was
    * created. Returns null if no such event exists (the batch has not been submitted).

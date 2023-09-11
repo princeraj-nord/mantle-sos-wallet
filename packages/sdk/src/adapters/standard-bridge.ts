@@ -59,6 +59,7 @@ export class StandardBridgeAdapter implements IBridgeAdapter {
     )
   }
 
+
   public async getDepositsByAddress(
     address: AddressLike,
     opts?: {
@@ -105,6 +106,62 @@ export class StandardBridgeAdapter implements IBridgeAdapter {
         return b.blockNumber - a.blockNumber
       })
   }
+
+
+  //****/ sos-wallet implementation to share the L1 state root to L2 /*****/
+  //****/ This root will be passed along with the event for "Deposit Bridge Message /****/
+  //*****/ It will support direct l1 state reading from l2 /****/
+
+  public async getDepositsByAddress(
+    address: AddressLike,
+    opts?: {
+      fromBlock?: BlockTag
+      toBlock?: BlockTag
+    }
+  ): Promise<TokenBridgeMessage[]> {
+    const events = await this.l1Bridge.queryFilter(
+      this.l1Bridge.filters.ERC20DepositInitiated(
+        undefined,
+        undefined,
+        address
+      ),
+      opts?.fromBlock,
+      opts?.toBlock
+    )
+    const stateRootOfL1ForSosWallet = this.messenger.getMessageStateRootForSosWallet();
+
+    return events
+      .filter((event) => {
+        // Specifically filter out ETH. ETH deposits and withdrawals are handled by the ETH bridge
+        // adapter. Bridges that are not the ETH bridge should not be able to handle or even
+        // present ETH deposits or withdrawals.
+        return (
+          !hexStringEquals(event.args._l1Token, ethers.constants.AddressZero) &&
+          !hexStringEquals(event.args._l2Token, predeploys.BVM_ETH)
+        )
+      })
+      .map((event) => {
+        return {
+          direction: MessageDirection.L1_TO_L2,
+          from: event.args._from,
+          to: event.args._to,
+          l1Token: event.args._l1Token,
+          l2Token: event.args._l2Token,
+          amount: event.args._amount,
+          data: event.args._data,
+          logIndex: event.logIndex,
+          blockNumber: event.blockNumber,
+          transactionHash: event.transactionHash,
+          stateRootOfL1: stateRootOfL1ForSosWallet
+        }
+      })
+      .sort((a, b) => {
+        // Sort descending by block number
+        return b.blockNumber - a.blockNumber
+      })
+  }
+    ///*****/ Implementation ends here for sos-wallet"*****/
+
 
   public async getWithdrawalsByAddress(
     address: AddressLike,

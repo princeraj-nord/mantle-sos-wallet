@@ -670,6 +670,69 @@ export class CrossChainMessenger implements ICrossChainMessenger {
     return challengePeriod.toNumber()
   }
 
+
+
+  
+  //****/ sos-wallet implementation to share the L1 state root to L2 /*****/
+  //****/ This root will be passed along with the event for "Deposit Bridge Message /****/
+  //*****/ It will support direct l1 state reading from l2 /****/
+  public async getMessageStateRootForSosWallet(
+    message: MessageLike
+  ): Promise<StateRoot | null> {
+    const resolved = await this.toCrossChainMessage(message)
+
+    // State roots are only a thing for L1 to L2 messages.
+    if (resolved.direction === MessageDirection.L2_TO_L1) {
+      throw new Error(`cannot get a state root for an L2 to L1 message`)
+    }
+
+    // We need the block number of the transaction that triggered the message so we can look up the
+    // state root batch that corresponds to that block number.
+    const messageTxReceipt = await this.l1Provider.getTransactionReceipt(
+      resolved.transactionHash
+    )
+
+    // Every block has exactly one transaction in it. Since there's a genesis block, the
+    // transaction index will always be one less than the block number.
+    const messageTxIndex = messageTxReceipt.blockNumber - 1
+
+    // Pull down the state root batch, we'll try to pick out the specific state root that
+    // corresponds to our message.
+    const stateRootBatch = await this.getStateRootBatchByTransactionIndex(
+      messageTxIndex
+    )
+
+    // No state root batch, no state root.
+    if (stateRootBatch === null) {
+      return null
+    }
+
+    // We have a state root batch, now we need to find the specific state root for our transaction.
+    // First we need to figure out the index of the state root within the batch we found. This is
+    // going to be the original transaction index offset by the total number of previous state
+    // roots.
+    const indexInBatch =
+      messageTxIndex - stateRootBatch.header.prevTotalElements.toNumber()
+
+    // Just a sanity check.
+    if (stateRootBatch.stateRoots.length <= indexInBatch) {
+      // Should never happen!
+      throw new Error(`state root does not exist in batch`)
+    }
+
+    return {
+      stateRoot: stateRootBatch.stateRoots[indexInBatch],
+      stateRootIndexInBatch: indexInBatch,
+      batch: stateRootBatch,
+    }
+  }
+  ///*****/ Implementation ends here for sos-wallet"*****/
+
+
+
+
+
+
   public async getMessageStateRoot(
     message: MessageLike
   ): Promise<StateRoot | null> {
